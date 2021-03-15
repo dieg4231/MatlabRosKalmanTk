@@ -305,8 +305,8 @@ void paramsCallback(const simulator::Parameters::ConstPtr& paramss)
 	  {
 	  	std::cout << "BEGIN Path :: \n  Real_x Real_y Real_thetas Kalman_x Kalman_y Kalman_thetas \n";
 	  	for(int i = 0; i < position_kalman.size(); ++i)
-			std::cout  <<  position_real[i](0) << " " << position_real[i](1) << " " << position_real[i](2) << " "  <<   position_kalman[i](0) << " " << position_kalman[i](1) << " " << position_kalman[i](2) << " \n";
-			//std::cout << position_ideal[i](0) << " " << position_ideal[i](1) << " " <<  position_real[i](0) << " " << position_real[i](1) << " "  <<   position_kalman[i](0) << " " << position_kalman[i](1)<<" \n";
+			//std::cout  <<  position_real[i](0) << " " << position_real[i](1) << " " << position_real[i](2) << " "  <<   position_kalman[i](0) << " " << position_kalman[i](1) << " " << position_kalman[i](2) << " \n";
+			std::cout << position_ideal[i](0) << "," << position_ideal[i](1) << "," <<  position_real[i](0) << "," << position_real[i](1) << ","  <<   position_kalman[i](0) << "," << position_kalman[i](1)<<" \n";
 		std::cout << "END Path :: \n";
 	  }
 	  run = params.run;
