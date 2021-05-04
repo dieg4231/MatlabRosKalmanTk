@@ -74,10 +74,12 @@ close all
     viz = Visualizer2D;
     viz.hasWaypoints = true;
     viz.mapName = 'map';
+    
+    %Atach sensors
     attachLidarSensor(viz,lidar);
-
-    % Colores de los objetos
     attachObjectDetector(viz,detector);
+    
+    % Colores de los objetos
     viz.objectColors = colors;
     viz.objectMarkers = 'so<sd^<>phpo<sd^<>phpo<sd';
     
@@ -103,11 +105,17 @@ close all
 
     %%% EKF
     
-    varianceV= .05;
+    varianceV= .03;
     meanValueV = 0;
     
-    varianceW= .08;
+    varianceW= .02;
     meanValueW = 0;
+    
+    sv = initPose; %State vector initialization
+    
+    sigma = [0 0 0; 0 0 0; 0 0 0];
+    
+    Q = [0.00001 0 0; 0 0.0001 0; 0 0 0.0001];
     
     
 
@@ -118,13 +126,18 @@ close all
     tVec = 0:sampleTime:65;        % Time array
     r = rateControl(1/sampleTime);
 
-    %Pose Ideal
+    %Ideal Pose 
     pose = zeros(3,numel(tVec));   % Pose matrix
     pose(:,1) = initPose;   % set first pose as the initial position
 
     %Pose with added noise
     poseWithNoise = zeros(3,numel(tVec)); 
     poseWithNoise(:,1) = initPose;  %Same initial pose
+    
+    
+    
+    
+    
     
   %%% SIMULATION
     
@@ -163,6 +176,7 @@ for idx = 2:numel(tVec)
     poseWithNoise(:,idx) = curPoseReal + velReal*sampleTime; 
     
     
+    
     % Update visualization
     
     % Update object detector and visualization
@@ -171,15 +185,46 @@ for idx = 2:numel(tVec)
     
     detections
     
-    % Display object detections every 10th iteration  
-%     if mod(idx,10) == 0
-%         if ~isempty(detections)
-%             nearestLabel = detections(1,3);
-%             disp(['Nearest object is of label ' num2str(nearestLabel)]); 
-%         else
-%             disp('No objects detected'); 
-%         end
-%     end  
+    % EKF
+    
+    %Prediction
+    [sv, u] = sampleOdometry(pose(:,idx-1),pose(:,idx),sv);
+    G = [ 1 0 -u(1)*sin(u(2));
+          0 1  u(1)*cos(u(2));
+          0 0         1       ];
+    sigma = G*sigma*G.' + Q;
+    %End prediction
+    
+    %Actualization
+    for i = 1:size(detections,1)
+        
+        %%Real measurement
+        z = [ sqrt(power(detections(i,1), 2) + power(detections(i,2), 2));
+              normalize(atan2(detections(i,2), detections(i,1))) ;
+              sv(3)];
+        
+       dist = power(objects(j,1) - sv(1), 2) + power(objects(j,2) - sv(2), 2); % Radicando de la de la distancia entre un landmark y el robot 
+        
+       
+       
+        for j = 1:size(objects,1)
+            if objects(j,3) == detections(i,3)
+                z_hat = [ sqrt(dist);
+                  normalize(atan2(objects(j,2) - sv(2), objects(j,1) - sv(1) ) - sv(3)) ;
+                  sv(3)];
+                id_landmark = j;
+            end
+        end
+        
+        
+        %%aqui vamos
+        H = [ -( landmarks_on_map[id_index].point.x - x_(0) ) / sqrt(dist) , -( landmarks_on_map[id_index].point.y - x_(1) ) / sqrt(dist),0,
+			 	  ( landmarks_on_map[id_index].point.y - x_(1) ) / dist, -( landmarks_on_map[id_index].point.x - x_(0) ) / dist,-1,
+			 	  0,0,0];
+	
+    end
+    
+ 
     
     waitfor(r);
     
@@ -190,3 +235,55 @@ hold on
 %% show path with noise and ideal path 
 plot(pose(1,:),pose(2,:));
 plot(poseWithNoise(1,:),poseWithNoise(2,:));
+
+
+------------------------------------------------------
+
+
+function [xk, u] = sampleOdometry(o_1,o,x)
+%SAMPLEODOMETRY Summary: Transform two poses in a comand
+%   Detailed explanation goes here
+% o_1 input parameter is the odometry pose in t-1 is a vector like [ x  y thetha ]  
+% o input parameter is the odometry in time t is a vector like [ x  y thetha ]
+% x is the state vector 
+
+x_bar_p = o(1);
+y_bar_p = o(2);
+theta_bar_p = o(3);
+
+x_bar = o_1(1);
+y_bar = o_1(2);
+theta_bar = o_1(3);
+
+%% c an a just for debugging DETETE IT
+%%c = normalizeAngle(3.14+1.57);
+a = sqrt(power(x_bar - x_bar_p, 2) + power(y_bar - y_bar_p, 2));
+
+if  a < .01  
+    d_rot1 = 0; % Si solo gira  y este valor no es cero entonces  d_rot2 = - d_rot1 y el angulo final es practicamente el mismo  que el inicial :o alv
+else
+    d_rot1 = normalizeAngle(normalizeAngle(atan2(y_bar_p - y_bar, x_bar_p - x_bar )) - normalizeAngle(theta_bar)); %atan2(y_bar_p - y_bar, x_bar_p - x_bar ) - theta_bar;
+
+d_trans1 = sqrt(  power(x_bar - x_bar_p, 2)  +  power(y_bar - y_bar_p, 2)  );
+d_rot2 = normalizeAngle(normalizeAngle(theta_bar_p) - normalizeAngle(theta_bar + d_rot1)); %theta_bar_p - theta_bar - d_rot1;
+    
+d_rot1_hat =  d_rot1 ;%- pf_ran_gaussian( ALPHA[0] * pow(d_rot1,2) + ALPHA[1] * pow(d_trans1,2) );
+d_trans1_hat = d_trans1 ;%- pf_ran_gaussian( ALPHA[2] * pow(d_trans1,2) + ALPHA[3] * pow(d_rot1,2) + ALPHA[3] * pow(d_rot2,2));
+d_rot2_hat = d_rot2 ;%- pf_ran_gaussian(ALPHA[0] * pow(d_rot2,2) + ALPHA[1] * pow(d_trans1,2));
+    
+x_o(1) = x(1) + d_trans1_hat * cos( x(3) + d_rot1_hat );
+x_o(2) = x(2) + d_trans1_hat * sin( x(3) + d_rot1_hat );
+
+
+u = [ x(3)+d_rot1_hat d_trans1_hat ];
+%*theta_plus_rotation1 = x_vector(2) + d_rot1_hat;
+%*translation = d_trans1_hat;
+
+x_o(3) = x(3) + d_rot1_hat + d_rot2_hat;
+
+xk = [x_o(1) x_o(2) x_o(3)];
+  
+    
+end
+
+
