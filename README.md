@@ -1,12 +1,3 @@
-roslaunch simulator simulator.launch 
-
-rosrun simulator kalman_visualization.py 
-
-rosrun  simulator kalman
-
-rosrun simulator kalman_to_blobs
-
-
 close all
 
 %%%%% ROBOT SETUP %%%%%%
@@ -23,8 +14,8 @@ close all
 
     % Create object Detector sensor
     detector = ObjectDetector;
-    detector.fieldOfView = pi/4;
-    detector.maxRange = 8; %[m]        
+    detector.fieldOfView = pi;
+    detector.maxRange = 15; %[m]        
     detector.maxDetections = 25;
     
     % Create lidar sensor
@@ -115,9 +106,12 @@ close all
     
     sigma = [0 0 0; 0 0 0; 0 0 0];
     
-    Q = [0.00001 0 0; 0 0.0001 0; 0 0 0.0001];
+    Q = [0.01 0 0; 0 0.01 0; 0 0 0.01];
+    R = [0.001 0 0; 0 0.001 0; 0 0 0.001];
     
-    
+    %Kalman Pose 
+    poseKalman = zeros(3,numel(tVec));   % Pose matrix
+    poseKalman(:,1) = sv;   % set first pose as the initial position
 
  %%% SIMULATION SETUP
  
@@ -146,6 +140,7 @@ for idx = 2:numel(tVec)
     %Update pose
     curPoseFake = pose(:,idx-1);
     curPoseReal = poseWithNoise(:,idx-1);
+    
     
     % Get the sensor readings from the real pose
     ranges = lidar(curPoseReal);
@@ -177,6 +172,7 @@ for idx = 2:numel(tVec)
     
     
     
+    
     % Update visualization
     
     % Update object detector and visualization
@@ -200,30 +196,39 @@ for idx = 2:numel(tVec)
         
         %%Real measurement
         z = [ sqrt(power(detections(i,1), 2) + power(detections(i,2), 2));
-              normalize(atan2(detections(i,2), detections(i,1))) ;
+              normalizeAngle(atan2(detections(i,2), detections(i,1))) ;
               sv(3)];
         
-       dist = power(objects(j,1) - sv(1), 2) + power(objects(j,2) - sv(2), 2); % Radicando de la de la distancia entre un landmark y el robot 
-        
+      
        
        
         for j = 1:size(objects,1)
             if objects(j,3) == detections(i,3)
-                z_hat = [ sqrt(dist);
-                  normalize(atan2(objects(j,2) - sv(2), objects(j,1) - sv(1) ) - sv(3)) ;
-                  sv(3)];
+                 
                 id_landmark = j;
             end
         end
         
+        dist = power(objects(id_landmark,1) - sv(1), 2) + power(objects(id_landmark,2) - sv(2), 2); % Radicando de la de la distancia entre un landmark y el robot 
         
+        z_hat = [ sqrt(dist);
+                  normalizeAngle(atan2(objects(id_landmark,2) - sv(2), objects(id_landmark,1) - sv(1) ) - sv(3)) ;
+                  sv(3)];
+              
         %%aqui vamos
-        H = [ -( landmarks_on_map[id_index].point.x - x_(0) ) / sqrt(dist) , -( landmarks_on_map[id_index].point.y - x_(1) ) / sqrt(dist),0,
-			 	  ( landmarks_on_map[id_index].point.y - x_(1) ) / dist, -( landmarks_on_map[id_index].point.x - x_(0) ) / dist,-1,
+        H = [ -( objects(id_landmark,1) - sv(1) ) / sqrt(dist),  -( objects(id_landmark,2) - sv(2) ) / sqrt(dist), 0;
+            ( objects(id_landmark,2) - sv(2)) / dist, -( objects(id_landmark,1) - sv(1) ) / dist,-1;
 			 	  0,0,0];
-	
+        
+       L = (H*sigma*H.') + R;
+       K =  (sigma* (H.')) /L;
+       V = z-z_hat;
+       sv = sv +  (K*V);
+       sigma = (eye(3) - K*H  ) * sigma;
+       
+ 
     end
-    
+    poseKalman(:,idx) = sv;
  
     
     waitfor(r);
@@ -235,6 +240,8 @@ hold on
 %% show path with noise and ideal path 
 plot(pose(1,:),pose(2,:));
 plot(poseWithNoise(1,:),poseWithNoise(2,:));
+plot( poseKalman(1,:), poseKalman(2,:));
+
 
 
 ------------------------------------------------------
@@ -281,7 +288,7 @@ u = [ x(3)+d_rot1_hat d_trans1_hat ];
 
 x_o(3) = x(3) + d_rot1_hat + d_rot2_hat;
 
-xk = [x_o(1) x_o(2) x_o(3)];
+xk = [x_o(1); x_o(2); x_o(3)];
   
     
 end
